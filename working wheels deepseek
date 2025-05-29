@@ -1,0 +1,50 @@
+// Motor Group A (OUT1/OUT2) - Motors 3 & 4
+const int ENA = 5;   // PWM speed for Group A
+const int IN1 = 7;   // Direction control
+const int IN2 = 8;
+
+// Motor Group B (OUT3/OUT4) - Motors 1 & 2
+const int ENB = 6;   // PWM speed for Group B
+const int IN3 = 9;
+const int IN4 = 10;
+
+void setup() {
+  // Initialize ALL control pins
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  
+  pinMode(ENB, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+}
+
+void loop() {
+  // --- TEST GROUP A (Motors 3 & 4) ONLY ---
+  analogWrite(ENA, 200);  // Medium speed
+  digitalWrite(IN1, HIGH);  // Forward
+  digitalWrite(IN2, LOW);
+  
+  delay(2000);  // Run for 2 sec
+  
+  // Stop Group A
+  analogWrite(ENA, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  
+  delay(1000);  // Pause
+
+  // --- Now test GROUP B (Motors 1 & 2) ---
+  analogWrite(ENB, 200);  // Medium speed
+  digitalWrite(IN3, HIGH);  // Forward
+  digitalWrite(IN4, LOW);
+  
+  delay(2000);  // Run for 2 sec
+  
+  // Stop Group B
+  analogWrite(ENB, 0);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+  
+  delay(1000);  // Pause
+}
