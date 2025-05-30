@@ -1,0 +1,107 @@
+import cv2
+import numpy as np
+import speech_recognition as sr
+import serial
+import time
+
+# Serial setup (adjust the port for your Pi)
+arduino = serial.Serial('/dev/ttyACM0', 9600, timeout=1)
+time.sleep(2)  # wait for Arduino to initialize
+
+color_ranges = {
+    "blue":   (np.array([100, 150, 0]),  np.array([140, 255, 255])),
+    "yellow": (np.array([20, 100, 100]), np.array([30, 255, 255])),
+    "green":  (np.array([40, 70, 70]),   np.array([80, 255, 255])),
+    "red1":   (np.array([0, 120, 70]),   np.array([10, 255, 255])),
+    "red2":   (np.array([170, 120, 70]), np.array([180, 255, 255]))
+}
+
+color_bgr = {
+    "blue": (255, 0, 0),
+    "yellow": (0, 255, 255),
+    "green": (0, 255, 0),
+    "red": (0, 0, 255)
+}
+
+# Define GStreamer pipeline for Raspberry Pi camera
+gst_pipeline = (
+    "libcamerasrc ! "
+    "video/x-raw, width=640, height=480, format=NV12, framerate=30/1 ! "
+    "videoconvert ! video/x-raw, format=BGR ! "
+    "appsink"
+)
+
+def listen_for_command():
+    recognizer = sr.Recognizer()
+    with sr.Microphone(device_index=2) as source:
+        print("Adjusting for ambient noise...")
+        recognizer.adjust_for_ambient_noise(source, duration=2)
+        print("Say 'go forward' followed by color or 'quit' to exit...")
+        try:
+            audio = recognizer.listen(source, timeout=5, phrase_time_limit=5)
+            text = recognizer.recognize_google(audio).lower()
+            print(f"You said: {text}")
+            return text
+        except Exception as e:
+            print(f"Voice error: {e}")
+            return ""
+
+def color_visible(selected_color):
+    # Open camera using GStreamer
+    cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+    if not cap.isOpened():
+        print("Error: Unable to open camera with GStreamer pipeline.")
+        return False
+
+    detected = False
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: Unable to read from camera.")
+            break
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        if selected_color == "red":
+            mask1 = cv2.inRange(hsv, color_ranges["red1"][0], color_ranges["red1"][1])
+            mask2 = cv2.inRange(hsv, color_ranges["red2"][0], color_ranges["red2"][1])
+            mask = cv2.add(mask1, mask2)
+        else:
+            lower, upper = color_ranges[selected_color]
+            mask = cv2.inRange(hsv, lower, upper)
+        mask = cv2.erode(mask, None, iterations=2)
+        mask = cv2.dilate(mask, None, iterations=2)
+        contours, _ = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            largest_contour = max(contours, key=cv2.contourArea)
+            ((x, y), radius) = cv2.minEnclosingCircle(largest_contour)
+            if radius > 10:
+                x_rect, y_rect, w_rect, h_rect = cv2.boundingRect(largest_contour)
+                rect_color = color_bgr[selected_color]
+                cv2.rectangle(frame, (x_rect, y_rect), (x_rect + w_rect, y_rect + h_rect), rect_color, 2)
+                cv2.putText(frame, selected_color.capitalize(), (x_rect, y_rect - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, rect_color, 2)
+                detected = True
+        cv2.imshow('Tracked Object', frame)
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or detected:
+            break
+    cap.release()
+    cv2.destroyAllWindows()
+    return detected
+
+if __name__ == "__main__":
+    while True:
+        cmd = listen_for_command()
+        if "quit" in cmd:
+            print("Exiting program.")
+            arduino.write(b'STOP\n')
+            break
+        if "go forward" in cmd:
+            for color in ["blue", "yellow", "green", "red"]:
+                if color in cmd:
+                    print(f"Waiting for color: {color}")
+                    if color_visible(color):
+                        print(f"Color {color} detected, sending {color.upper()} command to Arduino.")
+                        arduino.write(f"{color.upper()}\n".encode())
+                        time.sleep(2)  # Move for 2 seconds
+                        arduino.write(b'STOP\n')
+                    else:
+                        print("Color not detected.")
